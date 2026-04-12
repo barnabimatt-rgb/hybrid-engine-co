@@ -1,0 +1,9 @@
+{
+  "name": "hybrid-engine-co-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hybrid Engine Co. Dashboard",
+  "scripts": {
+    "build": "echo 'Static frontend — no build step needed'"
+  }
+}

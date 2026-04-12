@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hybrid Engine Co. — Command Center</title>
+  <style>
+    :root {
+      --bg: #0A0A0A;
+      --surface: #141414;
+      --surface2: #1E1E1E;
+      --border: #2A2A2A;
+      --text: #E0E0E0;
+      --text-dim: #888;
+      --accent: #00D4FF;
+      --green: #00E676;
+      --yellow: #FFD600;
+      --red: #FF5252;
+      --orange: #FF9100;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --mono: 'SF Mono', 'Fira Code', monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+    a { color: var(--accent); text-decoration: none; }
+
+    /* Layout */
+    .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 18px; font-weight: 700; color: var(--accent); }
+    .header .status { font-size: 12px; color: var(--green); }
+    .nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 0; }
+    .nav button { background: none; border: none; color: var(--text-dim); padding: 12px 16px; cursor: pointer; font-size: 13px; font-family: var(--font); border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .nav button:hover { color: var(--text); }
+    .nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+    /* Grid */
+    .grid { display: grid; gap: 16px; }
+    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+
+    /* Cards */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 8px; }
+    .card .value { font-size: 28px; font-weight: 700; font-family: var(--mono); }
+    .card .sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+    /* Gauge */
+    .gauge-bar { height: 8px; background: var(--surface2); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+    .gauge-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+    .gauge-fill.green { background: var(--green); }
+    .gauge-fill.yellow { background: var(--yellow); }
+    .gauge-fill.red { background: var(--red); }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge.green { background: rgba(0,230,118,0.15); color: var(--green); }
+    .badge.yellow { background: rgba(255,214,0,0.15); color: var(--yellow); }
+    .badge.red { background: rgba(255,82,82,0.15); color: var(--red); }
+    .badge.blue { background: rgba(0,212,255,0.15); color: var(--accent); }
+
+    /* Loading */
+    .loading { text-align: center; padding: 40px; color: var(--text-dim); }
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px 0; }
+    .section-title:first-child { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>⚡ HYBRID ENGINE CO.</h1>
+    <div class="status" id="status">Connecting...</div>
+  </div>
+
+  <div class="nav" id="nav">
+    <button class="active" data-page="overview">Overview</button>
+    <button data-page="revenue">Revenue</button>
+    <button data-page="pipelines">Pipelines</button>
+    <button data-page="limits">Limits</button>
+    <button data-page="health">Health</button>
+    <button data-page="events">Events</button>
+    <button data-page="freeApis">Free APIs</button>
+  </div>
+
+  <div class="main" id="app">
+    <div class="loading"><div class="spinner"></div><br>Loading dashboard...</div>
+  </div>
+
+  <script>
+    const API = '/api/dashboard';
+    let currentPage = 'overview';
+    let data = null;
+
+    // Navigation
+    document.getElementById('nav').addEventListener('click', (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      document.querySelectorAll('.nav button').forEach((b) => b.classList.remove('active'));
+      e.target.classList.add('active');
+      currentPage = e.target.dataset.page;
+      render();
+    });
+
+    // Fetch data
+    async function fetchData() {
+      try {
+        const [overview, limits, events] = await Promise.all([
+          fetch(`${API}/overview`).then((r) => r.json()),
+          fetch(`${API}/limits`).then((r) => r.json()),
+          fetch(`${API}/events?limit=30`).then((r) => r.json()),
+        ]);
+        data = { ...overview, limitsDetail: limits, eventsList: events.events || [] };
+        document.getElementById('status').textContent = '● Online';
+        document.getElementById('status').style.color = 'var(--green)';
+        render();
+      } catch (err) {
+        document.getElementById('status').textContent = '● Offline';
+        document.getElementById('status').style.color = 'var(--red)';
+      }
+    }
+
+    // Helpers
+    function usd(cents) { return '$' + (cents / 100).toFixed(2); }
+    function pct(v) { return Math.round(v || 0) + '%'; }
+    function badge(status) {
+      const map = { completed: 'green', running: 'blue', success: 'green', failed: 'red', error: 'red', degraded: 'yellow', fallback: 'yellow', queued: 'blue', skipped: 'yellow' };
+      return `<span class="badge ${map[status] || 'blue'}">${status}</span>`;
+    }
+    function gaugeColor(p) { return p > 80 ? 'red' : p > 60 ? 'yellow' : 'green'; }
+    function gauge(label, used, total) {
+      const p = total > 0 ? Math.round((used / total) * 100) : 0;
+      return `<div class="card"><h3>${label}</h3><div class="value">${pct(p)}</div><div class="sub">${used.toLocaleString()} / ${total.toLocaleString()}</div><div class="gauge-bar"><div class="gauge-fill ${gaugeColor(p)}" style="width:${p}%"></div></div></div>`;
+    }
+
+    // Renderers
+    function renderOverview() {
+      if (!data) return '<div class="loading">Loading...</div>';
+      const r = data.revenue || {};
+      const o = data.output || {};
+      const h = data.health || {};
+      const lim = h.limits || {};
+      const el = lim.elevenlabs || {};
+      const rl = lim.railway || {};
+
+      const totalAssets = Object.values(o).reduce((s, v) => s + v, 0);
+
+      return `
+        <div class="section-title">Revenue</div>
+        <div class="grid grid-4">
+          <div class="card"><h3>Total Revenue</h3><div class="value" style="color:var(--green)">${usd(r.totalCents || 0)}</div></div>
+          <div class="card"><h3>Assets Produced</h3><div class="value">${totalAssets}</div></div>
+          <div class="card"><h3>Error Rate (1h)</h3><div class="value" style="color:${(h.errorRate||0) > 20 ? 'var(--red)' : 'var(--green)'}">${pct(h.errorRate)}</div></div>
+          <div class="card"><h3>Headroom</h3><div class="value">${pct((lim.headroom||0)*100)}</div></div>
+        </div>
+
+        <div class="section-title">Limits</div>
+        <div class="grid grid-4">
+          ${gauge('ElevenLabs Chars', el.used || 0, el.limit || 100000)}
+          ${gauge('Railway Daily', rl.daily?.used || 0, rl.daily?.limit || 1200)}
+          ${gauge('Railway Monthly', rl.monthly?.used || 0, rl.monthly?.limit || 30000)}
+          <div class="card"><h3>Memory</h3><div class="value">${rl.system?.memoryPct || 0}%</div><div class="sub">${rl.system?.memoryUsedMB || 0} MB used</div></div>
+        </div>
+
+        <div class="section-title">Revenue by Source</div>
+        <div class="grid grid-4">
+          ${Object.entries(r.bySource || {}).map(([k,v]) => `<div class="card"><h3>${k}</h3><div class="value" style="color:var(--green)">${usd(v)}</div></div>`).join('') || '<div class="card"><h3>No revenue yet</h3><div class="sub">Revenue will appear here after first sale</div></div>'}
+        </div>
+
+        <div class="section-title">Recent Pipelines</div>
+        <div class="table-wrap"><table>
+          <tr><th>Type</th><th>Status</th><th>Steps</th><th>Fallbacks</th><th>Errors</th><th>Time</th></tr>
+          ${(data.pipelines?.recent || []).slice(0,8).map((p) => `<tr><td>${p.pipeline_type}</td><td>${badge(p.status)}</td><td>${p.steps_completed}/${p.steps_total}</td><td>${p.fallback_count}</td><td>${p.error_count}</td><td>${new Date(p.created_at).toLocaleTimeString()}</td></tr>`).join('')}
+        </table></div>
+      `;
+    }
+
+    function renderRevenue() {
+      if (!data) return '';
+      const r = data.revenue || {};
+      return `
+        <div class="section-title">Revenue Overview</div>
+        <div class="grid grid-4">
+          <div class="card"><h3>Total</h3><div class="value" style="color:var(--green)">${usd(r.totalCents||0)}</div></div>
+          ${Object.entries(r.bySource||{}).map(([k,v])=>`<div class="card"><h3>${k}</h3><div class="value">${usd(v)}</div></div>`).join('')}
+        </div>
+        <div class="section-title">Revenue by Niche</div>
+        <div class="grid grid-4">
+          ${Object.entries(r.byNiche||{}).map(([k,v])=>`<div class="card"><h3>${k.replace(/_/g,' ')}</h3><div class="value">${usd(v)}</div></div>`).join('') || '<div class="card"><h3>No niche revenue yet</h3></div>'}
+        </div>
+      `;
+    }
+
+    function renderPipelines() {
+      if (!data) return '';
+      const runs = data.pipelines?.recent || [];
+      return `
+        <div class="section-title">Orchestrator</div>
+        <div class="grid grid-4">
+          <div class="card"><h3>Status</h3><div class="value" style="color:var(--green)">${data.pipelines?.orchestrator?.running ? 'Running' : 'Stopped'}</div></div>
+          <div class="card"><h3>Active</h3><div class="value">${data.pipelines?.orchestrator?.activePipelines || 0}</div></div>
+          <div class="card"><h3>Total Runs</h3><div class="value">${data.pipelines?.orchestrator?.totalRuns || 0}</div></div>
+          <div class="card"><h3>Registered</h3><div class="value">${(data.pipelines?.registered||[]).length}</div></div>
+        </div>
+        <div class="section-title">Recent Runs</div>
+        <div class="table-wrap"><table>
+          <tr><th>ID</th><th>Type</th><th>Status</th><th>Steps</th><th>Fallbacks</th><th>Errors</th><th>Started</th></tr>
+          ${runs.map((p)=>`<tr><td style="font-family:var(--mono);font-size:11px">${(p.id||'').slice(0,8)}</td><td>${p.pipeline_type}</td><td>${badge(p.status)}</td><td>${p.steps_completed}/${p.steps_total}</td><td>${p.fallback_count}</td><td>${p.error_count}</td><td>${p.started_at ? new Date(p.started_at).toLocaleString() : '-'}</td></tr>`).join('')}
+        </table></div>
+      `;
+    }
+
+    function renderLimits() {
+      if (!data) return '';
+      const lim = data.health?.limits || {};
+      const el = lim.elevenlabs || {};
+      const rl = lim.railway || {};
+      return `
+        <div class="section-title">ElevenLabs</div>
+        <div class="grid grid-4">
+          ${gauge('Characters Used', el.used||0, el.limit||100000)}
+          <div class="card"><h3>Remaining</h3><div class="value">${(el.remaining||0).toLocaleString()}</div></div>
+          <div class="card"><h3>Safe Ceiling</h3><div class="value">${(el.safeCeiling||0).toLocaleString()}</div></div>
+          <div class="card"><h3>Max Script</h3><div class="value">${(el.recommendedMaxChars||0).toLocaleString()}</div><div class="sub">characters</div></div>
+        </div>
+        <div class="section-title">Railway Runtime</div>
+        <div class="grid grid-4">
+          ${gauge('Daily Runtime', rl.daily?.used||0, rl.daily?.limit||1200)}
+          ${gauge('Monthly Runtime', rl.monthly?.used||0, rl.monthly?.limit||30000)}
+          <div class="card"><h3>Can Run Heavy</h3><div class="value" style="color:${lim.canRunHeavy ? 'var(--green)' : 'var(--red)'}">${lim.canRunHeavy ? 'YES' : 'NO'}</div></div>
+          <div class="card"><h3>Headroom</h3><div class="value">${pct((lim.headroom||0)*100)}</div></div>
+        </div>
+      `;
+    }
+
+    function renderHealth() {
+      if (!data) return '';
+      const h = data.health || {};
+      const sys = h.limits?.railway?.system || {};
+      return `
+        <div class="section-title">System Health</div>
+        <div class="grid grid-4">
+          <div class="card"><h3>Error Rate</h3><div class="value" style="color:${(h.errorRate||0) > 20 ? 'var(--red)' : 'var(--green)'}">${pct(h.errorRate)}</div></div>
+          <div class="card"><h3>Memory</h3><div class="value">${sys.memoryPct||0}%</div><div class="sub">${sys.memoryUsedMB||0} / ${sys.memoryTotalMB||0} MB</div></div>
+          <div class="card"><h3>Uptime</h3><div class="value">${sys.uptimeMinutes||0}</div><div class="sub">minutes</div></div>
+          <div class="card"><h3>PID</h3><div class="value" style="font-size:16px;font-family:var(--mono)">${data.health?.system?.pid || '-'}</div></div>
+        </div>
+      `;
+    }
+
+    function renderEvents() {
+      if (!data) return '';
+      const events = data.eventsList || [];
+      return `
+        <div class="section-title">Recent Agent Events</div>
+        <div class="table-wrap"><table>
+          <tr><th>Agent</th><th>Status</th><th>Retry</th><th>Fallback</th><th>Duration</th><th>Time</th></tr>
+          ${events.map((e)=>`<tr><td>${e.agent_name}</td><td>${badge(e.status)}</td><td>${e.retry_count||0}</td><td>${e.fallback_used||'-'}</td><td>${e.duration_ms ? e.duration_ms+'ms' : '-'}</td><td>${new Date(e.created_at).toLocaleTimeString()}</td></tr>`).join('')}
+        </table></div>
+      `;
+    }
+
+    let freeApiData = null;
+    async function fetchFreeApiData() {
+      try {
+        freeApiData = await fetch('/api/free-apis').then(r=>r.json());
+      } catch(e) { freeApiData = null; }
+    }
+
+    function renderFreeApis() {
+      if (!freeApiData || !freeApiData.agents) return '<div class="loading"><div class="spinner"></div><br>Loading Free API agents...</div>';
+      const agents = freeApiData.agents || [];
+      const healthyCount = agents.filter(a=>a.healthy).length;
+      const catColors = { weather:'#00D4FF', environment:'#00E676', fitness:'#FF9100', nutrition:'#FFD600', finance:'#9C27B0', science:'#2196F3', productivity:'#4CAF50', geocoding:'#FF5722', content:'#E91E63', education:'#00BCD4' };
+
+      const cards = agents.map(a => {
+        const col = catColors[a.category]||'#888';
+        return `<div class="card" style="border-left:3px solid ${col}"><h3 style="display:flex;justify-content:space-between"><span>${a.name.replace('Agent','')}</span>${badge(a.healthy?'completed':'failed')}</h3><div class="sub" style="margin-top:4px"><span style="color:${col}">${a.category}</span> · ${a.authMethod==='none'?'No auth':'API key'} · ${a.rateLimit}/min</div><div style="margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--text-dim);word-break:break-all">${a.baseUrl}</div><div style="margin-top:8px" class="sub">Requests: ${a.requestCount||0}</div></div>`;
+      }).join('');
+
+      const cats = agents.reduce((acc,a)=>{acc[a.category]=(acc[a.category]||0)+1;return acc;},{});
+
+      return `
+        <div class="section-title">Free API Agents</div>
+        <div class="grid grid-4">
+          <div class="card"><h3>Total Agents</h3><div class="value">${agents.length}</div></div>
+          <div class="card"><h3>Healthy</h3><div class="value" style="color:var(--green)">${healthyCount}</div></div>
+          <div class="card"><h3>Unhealthy</h3><div class="value" style="color:${agents.length-healthyCount>0?'var(--red)':'var(--green)'}">${agents.length-healthyCount}</div></div>
+          <div class="card"><h3>No Auth Required</h3><div class="value">${agents.filter(a=>a.authMethod==='none').length}</div></div>
+        </div>
+        <div class="section-title">Agents by Category</div>
+        <div class="grid grid-4">${Object.entries(cats).map(([c,n])=>`<div class="card"><h3 style="color:${catColors[c]||'#888'}">${c}</h3><div class="value">${n}</div></div>`).join('')}</div>
+        <div class="section-title">Agent Status</div>
+        <div class="grid grid-3">${cards}</div>
+      `;
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+      const renderers = { overview: renderOverview, revenue: renderRevenue, pipelines: renderPipelines, limits: renderLimits, health: renderHealth, events: renderEvents, freeApis: renderFreeApis };
+      app.innerHTML = (renderers[currentPage] || renderOverview)();
+    }
+
+    // Poll every 30s
+    fetchData();
+    fetchFreeApiData();
+    setInterval(fetchData, 30000);
+    setInterval(fetchFreeApiData, 60000);
+  </script>
+</body>
+</html>
