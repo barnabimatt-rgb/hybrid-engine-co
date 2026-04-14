@@ -4,6 +4,7 @@ import { TrendIntelligenceAgent } from './core/TrendIntelligenceAgent.js';
 import { MarketResearchAgent } from './core/MarketResearchAgent.js';
 import { KnowledgeMemoryAgent } from './core/KnowledgeMemoryAgent.js';
 import { SelfOptimizationAgent } from './core/SelfOptimizationAgent.js';
+import { FreeApiIntegrationAgent } from './core/FreeApiIntegrationAgent.js';
 import { ContentStrategyAgent } from './content/ContentStrategyAgent.js';
 import { ScriptWriterAgent } from './content/ScriptWriterAgent.js';
 import { ThumbnailDesignerAgent } from './content/ThumbnailDesignerAgent.js';
@@ -68,6 +69,7 @@ class AgentRegistry {
       new MarketResearchAgent(),
       new KnowledgeMemoryAgent(),
       new SelfOptimizationAgent(),
+      new FreeApiIntegrationAgent(),
       new ContentStrategyAgent(),
       new ScriptWriterAgent(),
       new ThumbnailDesignerAgent(),

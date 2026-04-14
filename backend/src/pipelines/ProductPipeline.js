@@ -8,6 +8,7 @@ export const ProductPipeline = {
   steps: [
     { agentName: 'BrandBrainAgent' },
     { agentName: 'TrendIntelligenceAgent' },
+    { agentName: 'FreeApiIntegrationAgent' },
     { agentName: 'MarketResearchAgent' },
     { agentName: 'ContentStrategyAgent' },
     { agentName: 'ProductGeneratorAgent', fallbackChain: productFallback },

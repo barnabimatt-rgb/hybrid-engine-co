@@ -7,6 +7,7 @@ export const MarketplacePipeline = {
   steps: [
     { agentName: 'BrandBrainAgent' },
     { agentName: 'TrendIntelligenceAgent' },
+    { agentName: 'FreeApiIntegrationAgent' },
     { agentName: 'ContentStrategyAgent' },
     { agentName: 'ProductGeneratorAgent' },
     { agentName: 'MarketplaceListingAgent' },
