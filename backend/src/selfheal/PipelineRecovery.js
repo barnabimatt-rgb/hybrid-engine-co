@@ -41,7 +41,7 @@ export class PipelineRecovery {
         }
       }
     } catch (err) {
-      log.error({ error: err.message }, 'Recovery scan failed');
+      log.error({ error: (err.message || String(err)).slice(0, 300) }, 'Recovery scan failed');
     }
     return recovered;
   }

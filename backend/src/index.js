@@ -5,6 +5,7 @@ import orchestrator from './orchestrator/Orchestrator.js';
 import agentRegistry from './agents/AgentRegistry.js';
 import freeApiRegistry from './agents/free-api/FreeApiRegistry.js';
 import pipelineRegistry from './orchestrator/PipelineRegistry.js';
+import { getDBAsync } from './db/supabase.js';
 import { createLogger } from './utils/logger.js';
 
 const log = createLogger('main');
@@ -18,6 +19,10 @@ async function main() {
   log.info({ agents: agentRegistry.count }, 'Agents loaded');
   log.info({ freeApiAgents: freeApiRegistry.count }, 'Free API agents loaded');
   log.info({ pipelines: pipelineRegistry.getAllNames() }, 'Pipelines registered');
+
+  // 1.5 Probe database before anything touches it
+  const db = await getDBAsync();
+  log.info({ dbType: db.type }, 'Database ready');
 
   // 2. Start Express server
   const app = createApp();

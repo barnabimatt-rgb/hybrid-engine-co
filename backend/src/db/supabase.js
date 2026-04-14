@@ -5,11 +5,16 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('db:supabase');
 
 let client = null;
+let supabaseHealthy = null; // null = untested, true/false after probe
+let noCredsWarned = false;
 
 export function getSupabase() {
   if (!client) {
     if (!config.supabase.url || !config.supabase.serviceKey) {
-      log.warn('Supabase credentials not configured — using in-memory fallback');
+      if (!noCredsWarned) {
+        log.warn('Supabase credentials not configured — using in-memory fallback');
+        noCredsWarned = true;
+      }
       return null;
     }
     client = createClient(config.supabase.url, config.supabase.serviceKey, {
@@ -18,6 +23,30 @@ export function getSupabase() {
     log.info('Supabase client initialized');
   }
   return client;
+}
+
+/**
+ * Probe Supabase once on first use — if the URL is wrong or tables don't exist,
+ * permanently fall back to memDB instead of crashing every pipeline run.
+ */
+async function probeSupabase(sb) {
+  if (supabaseHealthy !== null) return supabaseHealthy;
+  try {
+    const { error } = await sb.from('pipeline_runs').select('id').limit(1);
+    if (error) {
+      // Table might not exist or URL might be wrong
+      const msg = typeof error === 'string' ? error : (error.message || JSON.stringify(error)).slice(0, 200);
+      log.warn({ error: msg }, 'Supabase probe failed — falling back to in-memory DB');
+      supabaseHealthy = false;
+    } else {
+      log.info('Supabase probe succeeded — using Supabase');
+      supabaseHealthy = true;
+    }
+  } catch (err) {
+    log.warn({ error: err.message }, 'Supabase probe threw — falling back to in-memory DB');
+    supabaseHealthy = false;
+  }
+  return supabaseHealthy;
 }
 
 const memoryStore = new Map();
@@ -82,9 +111,39 @@ export const memDB = {
   },
 };
 
-export function getDB() {
+/**
+ * Returns the active database handle.
+ * On first call with Supabase configured, probes the connection.
+ * If the probe fails (wrong URL, missing tables, network), permanently uses memDB.
+ */
+export async function getDBAsync() {
   const sb = getSupabase();
-  if (sb) return { type: 'supabase', client: sb };
+  if (sb) {
+    const healthy = await probeSupabase(sb);
+    if (healthy) return { type: 'supabase', client: sb };
+  }
+  return { type: 'memory', client: memDB };
+}
+
+/**
+ * Synchronous version — returns Supabase only if probe already passed.
+ * Safe to call in hot paths; uses memDB if probe hasn't run or failed.
+ */
+export function getDB() {
+  if (supabaseHealthy === true) {
+    const sb = getSupabase();
+    if (sb) return { type: 'supabase', client: sb };
+  }
+  if (supabaseHealthy === false) {
+    return { type: 'memory', client: memDB };
+  }
+  // Probe hasn't run yet — trigger it in the background, use memDB for now
+  const sb = getSupabase();
+  if (sb) {
+    probeSupabase(sb).catch(() => {});
+    // Use memDB until probe completes; next call will have the result
+    return { type: 'memory', client: memDB };
+  }
   return { type: 'memory', client: memDB };
 }
 

@@ -115,7 +115,7 @@ class Orchestrator {
 
       log.info({ pipeline: name, status: result.status, fallbacks: result.fallbackCount, errors: result.errorCount }, 'Pipeline run complete');
     } catch (err) {
-      log.error({ pipeline: name, error: err.message }, 'Pipeline run failed');
+      log.error({ pipeline: name, error: (err.message || String(err)).slice(0, 300) }, 'Pipeline run failed');
     } finally {
       this.activePipelines--;
     }
