@@ -21,6 +21,7 @@ Niche: ${selected.niche || 'hybrid_fitness'}
 
 Choose the best topic and create a content strategy. Return JSON:
 {
+  "title": "compelling title for the content piece (50-70 chars, optimized for YouTube/search)",
   "topic": "chosen topic",
   "niche": "niche category",
   "contentFormat": "youtube_video|short_form|blog_post|carousel",
@@ -34,17 +35,22 @@ Choose the best topic and create a content strategy. Return JSON:
       const result = await openaiClient.generateJSON(prompt, { maxTokens: 600, temperature: 0.7 });
       if (result?.topic) {
         await limitManager.recordUsage('openai', 600);
+        // Ensure title is always set
+        if (!result.title) result.title = `${result.angle || result.topic} | Hybrid Engine Co.`;
         return { ...result, source: 'openai' };
       }
       this.log.warn('OpenAI strategy generation failed, falling back to template');
     }
 
+    const topic = selected.keyword;
+    const angle = `How to leverage ${topic} for peak performance`;
     return {
-      topic: selected.keyword,
+      title: `${angle} | Hybrid Engine Co.`,
+      topic,
       niche: selected.niche || context.selectedNiche,
       contentFormat: pickRandom(formats),
       targetAudience: 'hybrid athletes and data-driven fitness enthusiasts',
-      angle: `How to leverage ${selected.keyword} for peak performance`,
+      angle,
       source: 'template',
     };
   }

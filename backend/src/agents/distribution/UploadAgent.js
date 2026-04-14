@@ -7,8 +7,15 @@ export class UploadAgent extends BaseAgent {
   constructor() { super('UploadAgent', { category: 'distribution', requiresNetwork: true }); }
 
   async execute(context) {
-    this.requireContext(context, ['title']);
-    this.log.info({ title: context.title }, 'Uploading assets');
+    // Derive title from whatever's available in context
+    const title = context.title
+      || context.product?.name
+      || (context.angle ? `${context.angle} | Hybrid Engine Co.` : null)
+      || (context.topic ? `${context.topic} | Hybrid Engine Co.` : null)
+      || 'Hybrid Engine Co. Content';
+    context.title = title;
+
+    this.log.info({ title }, 'Uploading assets');
     const uploads = [];
 
     // If YouTube credentials are configured, attempt real upload
@@ -91,10 +98,17 @@ export class UploadAgent extends BaseAgent {
     if (!accessToken) return null;
 
     try {
+      const description = context.script?.slice(0, 500)
+        || context.product?.description
+        || context.product?.tagline
+        || context.angle
+        || context.topic
+        || '';
+
       const metadata = {
         snippet: {
           title: context.title,
-          description: `${context.script?.slice(0, 500) || ''}\n\nBuilt by Hybrid Engine Co.`,
+          description: `${description}\n\nBuilt by Hybrid Engine Co.`,
           tags: [context.niche, 'hybrid engine', 'data-driven', context.topic].filter(Boolean),
           categoryId: '22', // People & Blogs
         },
