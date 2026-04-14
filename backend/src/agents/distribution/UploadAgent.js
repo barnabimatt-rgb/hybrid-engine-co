@@ -18,8 +18,14 @@ export class UploadAgent extends BaseAgent {
     this.log.info({ title }, 'Uploading assets');
     const uploads = [];
 
-    // If YouTube credentials are configured, attempt real upload
-    if (this._hasYouTubeCredentials() && context.audioBuffer) {
+    // If YouTube credentials are configured, attempt upload
+    // Uses real audio if available, otherwise generates silent fallback audio
+    if (this._hasYouTubeCredentials()) {
+      if (!context.audioBuffer) {
+        this.log.info('No audioBuffer from VoiceoverAgent — generating silent fallback audio for YouTube upload');
+        context.audioBuffer = this._generateSilentWav(30);
+        context._silentFallbackAudio = true;
+      }
       const ytResult = await this._uploadToYouTube(context);
       if (ytResult) {
         const asset = await Asset.create({
@@ -28,10 +34,17 @@ export class UploadAgent extends BaseAgent {
           title: context.title,
           platform: 'youtube',
           niche: context.niche,
-          metadata: { youtubeId: ytResult.id, youtubeUrl: `https://youtube.com/watch?v=${ytResult.id}`, status: ytResult.status?.uploadStatus },
+          metadata: {
+            youtubeId: ytResult.id,
+            youtubeUrl: `https://youtube.com/watch?v=${ytResult.id}`,
+            status: ytResult.status?.uploadStatus,
+            silentFallback: !!context._silentFallbackAudio,
+          },
         });
         uploads.push(asset);
       }
+    } else {
+      this.log.warn('YouTube credentials not configured — skipping YouTube upload');
     }
 
     // Create local asset records for all exports
@@ -145,11 +158,12 @@ export class UploadAgent extends BaseAgent {
       }
 
       // Step 2: Upload the actual content
+      const contentType = context._silentFallbackAudio ? 'audio/wav' : 'audio/mpeg';
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'audio/mpeg',
+          'Content-Type': contentType,
         },
         body: context.audioBuffer,
         signal: AbortSignal.timeout(120000),
@@ -167,6 +181,43 @@ export class UploadAgent extends BaseAgent {
       this.log.error({ error: err.message }, 'YouTube upload error');
       return null;
     }
+  }
+  /**
+   * Generate a valid WAV file buffer with silence.
+   * YouTube accepts audio files and creates a video from them.
+   * This ensures content (title, description, tags) gets published even without ElevenLabs.
+   */
+  _generateSilentWav(durationSeconds = 30) {
+    const sampleRate = 22050;
+    const bitsPerSample = 16;
+    const numChannels = 1;
+    const bytesPerSample = bitsPerSample / 8;
+    const numSamples = sampleRate * durationSeconds;
+    const dataSize = numSamples * numChannels * bytesPerSample;
+    const headerSize = 44;
+    const buffer = Buffer.alloc(headerSize + dataSize); // Zeros = silence
+
+    // RIFF header
+    buffer.write('RIFF', 0);
+    buffer.writeUInt32LE(headerSize + dataSize - 8, 4);
+    buffer.write('WAVE', 8);
+
+    // fmt sub-chunk
+    buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16);                              // Sub-chunk size
+    buffer.writeUInt16LE(1, 20);                               // PCM format
+    buffer.writeUInt16LE(numChannels, 22);                     // Mono
+    buffer.writeUInt32LE(sampleRate, 24);                      // Sample rate
+    buffer.writeUInt32LE(sampleRate * numChannels * bytesPerSample, 28); // Byte rate
+    buffer.writeUInt16LE(numChannels * bytesPerSample, 32);    // Block align
+    buffer.writeUInt16LE(bitsPerSample, 34);                   // Bits per sample
+
+    // data sub-chunk
+    buffer.write('data', 36);
+    buffer.writeUInt32LE(dataSize, 40);
+    // Audio data is already zeros (silence) from Buffer.alloc
+
+    return buffer;
   }
 }
 export default UploadAgent;
