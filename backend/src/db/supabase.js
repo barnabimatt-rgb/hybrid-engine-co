@@ -22,10 +22,20 @@ export function getSupabase() {
 
 const memoryStore = new Map();
 
+const MAX_ROWS_PER_TABLE = 1000;
+const EVICTION_TRIGGER = 1200; // Start evicting when table exceeds this
+
 export const memDB = {
   async insert(table, row) {
     if (!memoryStore.has(table)) memoryStore.set(table, []);
-    memoryStore.get(table).push({ ...row, created_at: new Date().toISOString() });
+    const rows = memoryStore.get(table);
+    rows.push({ ...row, created_at: new Date().toISOString() });
+    // Evict oldest rows if table exceeds threshold
+    if (rows.length > EVICTION_TRIGGER) {
+      const evicted = rows.length - MAX_ROWS_PER_TABLE;
+      rows.splice(0, evicted);
+      log.info({ table, evicted, remaining: rows.length }, 'memDB eviction — pruned oldest rows');
+    }
     return row;
   },
   async select(table, filters = {}) {
@@ -52,6 +62,15 @@ export const memDB = {
   },
   async count(table) {
     return (memoryStore.get(table) || []).length;
+  },
+  getStats() {
+    const stats = {};
+    let totalRows = 0;
+    for (const [table, rows] of memoryStore) {
+      stats[table] = rows.length;
+      totalRows += rows.length;
+    }
+    return { tables: stats, totalRows, tableCount: memoryStore.size };
   },
   dump() {
     const out = {};

@@ -45,6 +45,8 @@ const config = Object.freeze({
 
   openai: {
     apiKey: env('OPENAI_API_KEY', ''),
+    model: env('OPENAI_MODEL', 'gpt-4o-mini'),
+    monthlyTokenLimit: int('OPENAI_MONTHLY_TOKEN_LIMIT', 500000),
   },
 
   orchestrator: {
@@ -56,6 +58,12 @@ const config = Object.freeze({
 
   dashboard: {
     pollIntervalSeconds: int('DASHBOARD_POLL_INTERVAL_SECONDS', 30),
+  },
+
+  auth: {
+    apiSecretKey: env('API_SECRET_KEY', ''),
+    dashboardUser: env('DASHBOARD_USER', ''),
+    dashboardPassword: env('DASHBOARD_PASSWORD', ''),
   },
 
   logLevel: env('LOG_LEVEL', 'info'),

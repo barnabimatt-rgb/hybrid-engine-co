@@ -10,6 +10,7 @@ export const ContentPipeline = {
   steps: [
     { agentName: 'BrandBrainAgent' },
     { agentName: 'TrendIntelligenceAgent' },
+    { agentName: 'FreeApiIntegrationAgent' },
     { agentName: 'KnowledgeMemoryAgent' },
     { agentName: 'ContentStrategyAgent' },
     { agentName: 'HookGeneratorAgent' },

@@ -12,6 +12,7 @@ import pipelinesRoutes from './routes/pipelines.js';
 import webhooksRoutes from './routes/webhooks.js';
 import triggersRoutes from './routes/triggers.js';
 import freeApisRoutes from './routes/freeApis.js';
+import { requireApiKey, requireDashboardAuth } from './middleware/auth.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('api:server');
@@ -24,15 +25,21 @@ export function createApp() {
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors());
   app.use(compression());
+
+  // Raw body for Stripe webhook signature verification
+  app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+  // JSON for everything else
   app.use(express.json());
 
-  // API Routes
+  // API Routes — public
   app.use('/api/health', healthRoutes);
-  app.use('/api/dashboard', dashboardRoutes);
-  app.use('/api/pipelines', pipelinesRoutes);
-  app.use('/api/webhooks', webhooksRoutes);
-  app.use('/api/triggers', triggersRoutes);
   app.use('/api/free-apis', freeApisRoutes);
+  app.use('/api/webhooks', webhooksRoutes); // Webhooks verify their own signatures
+
+  // API Routes — protected
+  app.use('/api/dashboard', requireDashboardAuth, dashboardRoutes);
+  app.use('/api/pipelines', requireApiKey, pipelinesRoutes);
+  app.use('/api/triggers', requireApiKey, triggersRoutes);
 
   // Serve frontend static files
   const frontendBuild = join(__dirname, '..', '..', '..', 'frontend', 'public');

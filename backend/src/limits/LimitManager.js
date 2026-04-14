@@ -1,6 +1,7 @@
 // backend/src/limits/LimitManager.js — Central coordinator for all service limits
 import elevenLabsLimiter, { LimitStatus } from './ElevenLabsLimiter.js';
 import railwayLimiter from './RailwayLimiter.js';
+import openaiLimiter from './OpenAILimiter.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('limits:manager');
@@ -9,6 +10,7 @@ class LimitManager {
   constructor() {
     this.elevenlabs = elevenLabsLimiter;
     this.railway = railwayLimiter;
+    this.openai = openaiLimiter;
   }
 
   check(service, estimatedCost) {
@@ -24,12 +26,19 @@ class LimitManager {
       if (status === LimitStatus.BLOCKED) return { status, recommendation: 'Defer heavy tasks' };
       return { status, recommendation: 'Proceed normally' };
     }
+    if (service === 'openai') {
+      const status = this.openai.canProceed(estimatedCost);
+      if (status === LimitStatus.THROTTLE) return { status, recommendation: 'Use shorter prompts or template fallback' };
+      if (status === LimitStatus.BLOCKED) return { status, recommendation: 'Use template fallback — token budget exhausted' };
+      return { status, recommendation: 'Proceed normally' };
+    }
     return { status: LimitStatus.PROCEED, recommendation: 'Unknown service — proceeding' };
   }
 
   async recordUsage(service, amount) {
     if (service === 'elevenlabs') await this.elevenlabs.recordUsage(amount);
     else if (service === 'railway') await this.railway.recordUsage(amount);
+    else if (service === 'openai') this.openai.recordUsage(amount);
   }
 
   canRunHeavyTask() {
@@ -48,6 +57,7 @@ class LimitManager {
     return {
       elevenlabs: this.elevenlabs.getSnapshot(),
       railway: this.railway.getSnapshot(),
+      openai: this.openai.getSnapshot(),
       headroom: this.getHeadroomScore(),
       canRunHeavy: this.canRunHeavyTask(),
     };
