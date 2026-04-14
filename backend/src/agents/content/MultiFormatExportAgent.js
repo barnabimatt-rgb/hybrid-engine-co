@@ -6,8 +6,7 @@ export class MultiFormatExportAgent extends BaseAgent {
     this.log.info('Exporting to multiple formats');
     const exports = [];
     if (context.video) {
-      exports.push({ format: 'mp4', platform: 'youtube', asset: context.video });
-      exports.push({ format: 'mp4_vertical', platform: 'shorts', asset: { ...context.video, resolution: '1080x1920' } });
+      exports.push({ format: 'mp4', platform: 'youtube_shorts', asset: { ...context.video, resolution: '1080x1920', maxDuration: 59 } });
     }
     if (context.script) exports.push({ format: 'md', platform: 'blog', content: context.script });
     if (context.thumbnail) exports.push({ format: 'png', platform: 'youtube', asset: context.thumbnail });
