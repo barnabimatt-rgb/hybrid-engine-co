@@ -24,6 +24,21 @@ async function main() {
   const db = await getDBAsync();
   log.info({ dbType: db.type }, 'Database ready');
 
+  // 1.6 Log external API service availability
+  const services = {
+    openai: !!config.openai.apiKey,
+    elevenLabs: !!config.elevenLabs.apiKey,
+    youtube: !!(config.youtube.clientId && config.youtube.clientSecret && config.youtube.refreshToken),
+    stripe: !!config.stripe.secretKey,
+    gumroad: !!config.gumroad.accessToken,
+    supabase: db.type === 'supabase',
+  };
+  const configured = Object.entries(services).filter(([, v]) => v).map(([k]) => k);
+  const missing = Object.entries(services).filter(([, v]) => !v).map(([k]) => k);
+  log.info({ configured, missing }, 'External API services');
+  if (!services.youtube) log.warn('YouTube credentials NOT configured — content will be saved locally only, no YouTube uploads');
+  if (!services.elevenLabs) log.warn('ElevenLabs NOT configured — voiceover will use silent fallback audio');
+
   // 2. Start Express server
   const app = createApp();
   const server = app.listen(config.port, () => {

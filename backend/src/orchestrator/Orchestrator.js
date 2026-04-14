@@ -17,6 +17,7 @@ class Orchestrator {
     this.cronJob = null;
     this.activePipelines = 0;
     this.totalRuns = 0;
+    this.contentHasRun = false; // Ensures content pipeline runs first on boot
   }
 
   start() {
@@ -64,8 +65,15 @@ class Orchestrator {
         return;
       }
 
-      // 3. Select and run a pipeline
-      const pipelineName = this._selectPipeline();
+      // 3. Select and run a pipeline — content pipeline always runs first on boot
+      let pipelineName;
+      if (!this.contentHasRun) {
+        pipelineName = 'content';
+        this.contentHasRun = true;
+        log.info('First tick — forcing content pipeline to produce YouTube content');
+      } else {
+        pipelineName = this._selectPipeline();
+      }
       await this._runPipeline(pipelineName);
 
     } catch (err) {
@@ -74,19 +82,19 @@ class Orchestrator {
   }
 
   _selectPipeline() {
-    // Weighted selection: content and product are higher priority
+    // Weighted selection: content is highest priority (YouTube output is the primary goal)
     const headroom = limitManager.getHeadroomScore();
     const weighted = [];
 
     if (headroom > 0.5) {
-      // Plenty of headroom — run revenue-generating pipelines
-      weighted.push('content', 'content', 'product', 'product', 'funnel', 'marketplace', 'affiliate');
+      // Plenty of headroom — content-heavy mix
+      weighted.push('content', 'content', 'content', 'content', 'content', 'product', 'funnel', 'marketplace', 'affiliate');
     } else if (headroom > 0.2) {
-      // Moderate headroom — lighter pipelines
-      weighted.push('content', 'product', 'funnel', 'self_optimization');
+      // Moderate headroom — still prioritize content
+      weighted.push('content', 'content', 'content', 'product', 'self_optimization');
     } else {
       // Low headroom — optimization only
-      weighted.push('self_optimization', 'self_optimization', 'affiliate');
+      weighted.push('self_optimization', 'self_optimization', 'content');
     }
 
     return pickRandom(weighted);
