@@ -10,8 +10,9 @@ export class VideoAssemblyAgent extends BaseAgent {
     if (!hasAudio && !hasBroll) videoType = 'text_slides';
     else if (!hasAudio) videoType = 'broll_with_captions';
     else if (!hasBroll) videoType = 'audio_with_static';
+    const duration = Math.min(context.estimatedDuration || 59, 59); // Cap at 59s for Shorts
     return {
-      video: { type: videoType, title: context.title, duration: context.estimatedDuration || 60, format: 'mp4', resolution: '1080p', hasAudio, hasBroll, clipCount: (context.brollClips || []).length, url: `/videos/${Date.now()}_output.mp4` },
+      video: { type: videoType, title: context.title, duration, format: 'mp4', resolution: '1080x1920', aspect: '9:16', isShort: true, hasAudio, hasBroll, clipCount: (context.brollClips || []).length, url: `/videos/${Date.now()}_output.mp4` },
     };
   }
 }

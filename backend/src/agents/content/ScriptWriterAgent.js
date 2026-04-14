@@ -4,31 +4,33 @@ import contentTemplateEngine from '../../utils/ContentTemplateEngine.js';
 import openaiClient from '../../utils/OpenAIClient.js';
 
 export class ScriptWriterAgent extends BaseAgent {
-  constructor() { super('ScriptWriterAgent', { category: 'content', estimatedElevenLabsChars: 3000 }); }
+  constructor() { super('ScriptWriterAgent', { category: 'content', estimatedElevenLabsChars: 750 }); }
   async execute(context) {
     this.requireContext(context, ['topic', 'niche']);
     this.log.info({ topic: context.topic }, 'Writing script');
 
-    const limitCheck = limitManager.check('elevenlabs', 3000);
-    let maxChars = 3000;
-    if (limitCheck.status === 'throttle') maxChars = 1500;
-    if (limitCheck.status === 'blocked') maxChars = 500;
+    // YouTube Shorts: max 60 seconds ≈ 750 chars at ~12.5 chars/sec speaking rate
+    const limitCheck = limitManager.check('elevenlabs', 750);
+    let maxChars = 750;
+    if (limitCheck.status === 'throttle') maxChars = 500;
+    if (limitCheck.status === 'blocked') maxChars = 300;
 
     const title = `${context.angle || context.topic} | Hybrid Engine Co.`;
 
     // Progressive enhancement: use OpenAI if available
-    const openaiCheck = limitManager.check('openai', 1500);
+    const openaiCheck = limitManager.check('openai', 500);
     if (openaiClient.isAvailable() && openaiCheck.status !== 'blocked') {
       const enrichment = context.freeApiData || {};
       const dataContext = enrichment.exercises ? `\nRelevant exercises: ${enrichment.exercises.slice(0, 3).map(e => e.name).join(', ')}` : '';
       const nutritionContext = enrichment.nutrition ? `\nNutrition data: ${JSON.stringify(enrichment.nutrition).slice(0, 200)}` : '';
 
-      const prompt = `Write a ${maxChars}-character max video script for the topic "${context.topic}" in the ${context.niche} niche.
+      const prompt = `Write a YouTube Shorts script (under ${maxChars} characters, must be under 55 seconds when spoken) for the topic "${context.topic}" in the ${context.niche} niche.
 Target audience: ${context.targetAudience || 'data-driven fitness enthusiasts'}.
 Content angle: ${context.angle || context.topic}.${dataContext}${nutritionContext}
 
-Structure: Start with a strong hook (first 2 sentences must grab attention), then deliver actionable value with specific data points or frameworks, end with a clear CTA.
-Keep it conversational but authoritative. No fluff.`;
+FORMAT: YouTube Short (vertical video, fast-paced, punchy).
+Structure: Immediate attention-grabbing hook in the first sentence (no warmup), then 2-3 rapid-fire value points with specific data or actionable tips, end with a strong 1-sentence CTA.
+Keep it high energy, conversational, and direct. Every sentence must earn its place. No filler.`;
 
       const aiScript = await openaiClient.generateText(prompt, { maxTokens: Math.ceil(maxChars / 3), temperature: 0.75 });
       if (aiScript) {
