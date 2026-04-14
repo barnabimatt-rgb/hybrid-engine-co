@@ -118,9 +118,12 @@ export class UploadAgent extends BaseAgent {
         || context.topic
         || '';
 
+      // Truncate title to 100 chars (YouTube limit)
+      const title = (context.title || 'Hybrid Engine Co. Content').slice(0, 100);
+
       const metadata = {
         snippet: {
-          title: context.title,
+          title,
           description: `${description}\n\nBuilt by Hybrid Engine Co.`,
           tags: [context.niche, 'hybrid engine', 'data-driven', context.topic].filter(Boolean),
           categoryId: '22', // People & Blogs
@@ -131,14 +134,20 @@ export class UploadAgent extends BaseAgent {
         },
       };
 
+      const uploadBuffer = context.audioBuffer;
+      const bufferSize = uploadBuffer?.byteLength || 0;
+
       // Step 1: Initialize resumable upload
+      // YouTube API requires video/* or application/octet-stream — NOT audio/*
       const initResponse = await fetch(
         'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
         {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json; charset=UTF-8',
+            'X-Upload-Content-Type': 'application/octet-stream',
+            'X-Upload-Content-Length': String(bufferSize),
           },
           body: JSON.stringify(metadata),
           signal: AbortSignal.timeout(15000),
@@ -147,7 +156,7 @@ export class UploadAgent extends BaseAgent {
 
       if (!initResponse.ok) {
         const err = await initResponse.text().catch(() => '');
-        this.log.error({ status: initResponse.status, body: err.slice(0, 200) }, 'YouTube upload init failed');
+        this.log.error({ status: initResponse.status, body: err.slice(0, 300) }, 'YouTube upload init failed');
         return null;
       }
 
@@ -157,20 +166,23 @@ export class UploadAgent extends BaseAgent {
         return null;
       }
 
+      this.log.info({ bufferSize, title }, 'Uploading content to YouTube');
+
       // Step 2: Upload the actual content
-      const contentType = context._silentFallbackAudio ? 'audio/wav' : 'audio/mpeg';
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': contentType,
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(bufferSize),
         },
-        body: context.audioBuffer,
+        body: uploadBuffer,
         signal: AbortSignal.timeout(120000),
       });
 
       if (!uploadResponse.ok) {
-        this.log.error({ status: uploadResponse.status }, 'YouTube upload failed');
+        const errBody = await uploadResponse.text().catch(() => '');
+        this.log.error({ status: uploadResponse.status, body: errBody.slice(0, 300) }, 'YouTube upload failed');
         return null;
       }
 
