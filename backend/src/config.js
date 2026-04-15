@@ -43,6 +43,10 @@ const config = Object.freeze({
     accessToken: env('GUMROAD_ACCESS_TOKEN', ''),
   },
 
+  pexels: {
+    apiKey: env('PEXELS_API_KEY', ''),
+  },
+
   openai: {
     apiKey: env('OPENAI_API_KEY', ''),
     model: env('OPENAI_MODEL', 'gpt-4o-mini'),

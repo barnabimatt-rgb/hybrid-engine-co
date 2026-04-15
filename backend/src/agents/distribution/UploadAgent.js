@@ -29,12 +29,14 @@ export class UploadAgent extends BaseAgent {
     if (this._hasYouTubeCredentials()) {
       let videoBuffer = null;
 
+      const brollBuffer = context.brollVideoBuffer || null;
+
       if (context.audioBuffer) {
-        this.log.info('Converting ElevenLabs audio to MP4 video for YouTube');
-        videoBuffer = await this._audioToMp4(context.audioBuffer);
+        this.log.info({ hasBroll: !!brollBuffer }, 'Converting audio to MP4 video for YouTube');
+        videoBuffer = await this._audioToMp4(context.audioBuffer, brollBuffer);
       } else {
-        this.log.info('No audio from ElevenLabs — generating silent MP4 for YouTube');
-        videoBuffer = await this._generateSilentMp4(30);
+        this.log.info({ hasBroll: !!brollBuffer }, 'No audio — generating silent MP4 for YouTube');
+        videoBuffer = await this._generateSilentMp4(30, brollBuffer);
         context._silentFallbackVideo = true;
       }
 
@@ -96,40 +98,64 @@ export class UploadAgent extends BaseAgent {
   /**
    * Convert an audio buffer (MP3 from ElevenLabs) into a vertical MP4 video (YouTube Shorts format).
    * 1080x1920 (9:16 vertical), capped at 60 seconds for Shorts.
+   * If brollBuffer is provided, uses it as the video background instead of a solid color.
    */
-  async _audioToMp4(audioBuffer) {
+  async _audioToMp4(audioBuffer, brollBuffer = null) {
     const id = randomUUID();
     const audioPath = join(tmpdir(), `hec_audio_${id}.mp3`);
+    const brollPath = brollBuffer ? join(tmpdir(), `hec_broll_${id}.mp4`) : null;
     const outputPath = join(tmpdir(), `hec_video_${id}.mp4`);
 
     try {
       await writeFile(audioPath, audioBuffer);
+      if (brollBuffer && brollPath) await writeFile(brollPath, brollBuffer);
 
-      // YouTube-compliant encoding: High profile, keyframes every 2s, sufficient bitrate.
-      // Solid color + stillimage tune + high CRF produces near-zero bitrate streams
-      // that YouTube's transcoder rejects as "Processing abandoned."
-      await execFileAsync('ffmpeg', [
-        '-y',
-        '-f', 'lavfi', '-i', 'color=c=0x0f0f23:s=1080x1920:r=30',
-        '-i', audioPath,
-        '-c:v', 'libx264', '-preset', 'fast',
-        '-profile:v', 'high', '-level', '4.2',
-        '-b:v', '2M', '-maxrate', '3M', '-bufsize', '6M',
-        '-g', '60', '-keyint_min', '30', '-bf', '2',
-        '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
-        '-shortest', '-t', '59',
-        '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
-        outputPath,
-      ], { timeout: 120000 });
+      let args;
+      if (brollPath) {
+        // Use Pexels stock video as background — loop if shorter than audio
+        this.log.info('Using Pexels B-roll as video background');
+        args = [
+          '-y',
+          '-stream_loop', '-1', '-i', brollPath,
+          '-i', audioPath,
+          '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
+          '-c:v', 'libx264', '-preset', 'fast',
+          '-profile:v', 'high', '-level', '4.2',
+          '-b:v', '4M', '-maxrate', '5M', '-bufsize', '10M',
+          '-g', '60', '-keyint_min', '30', '-bf', '2',
+          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+          '-shortest', '-t', '59',
+          '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+          outputPath,
+        ];
+      } else {
+        // Fallback: solid dark background
+        args = [
+          '-y',
+          '-f', 'lavfi', '-i', 'color=c=0x0f0f23:s=1080x1920:r=30',
+          '-i', audioPath,
+          '-c:v', 'libx264', '-preset', 'fast',
+          '-profile:v', 'high', '-level', '4.2',
+          '-b:v', '2M', '-maxrate', '3M', '-bufsize', '6M',
+          '-g', '60', '-keyint_min', '30', '-bf', '2',
+          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+          '-shortest', '-t', '59',
+          '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+          outputPath,
+        ];
+      }
+
+      await execFileAsync('ffmpeg', args, { timeout: 120000 });
 
       const videoBuffer = await readFile(outputPath);
-      this.log.info({ inputSize: audioBuffer.byteLength, outputSize: videoBuffer.byteLength }, 'Audio converted to MP4');
+      this.log.info({ inputSize: audioBuffer.byteLength, outputSize: videoBuffer.byteLength, hasBroll: !!brollPath }, 'Audio converted to MP4');
       return videoBuffer;
     } catch (err) {
       this.log.error({ error: err.message }, 'ffmpeg audio-to-MP4 conversion failed');
       return null;
     } finally {
       await unlink(audioPath).catch(() => {});
+      if (brollPath) await unlink(brollPath).catch(() => {});
       await unlink(outputPath).catch(() => {});
     }
   }
@@ -138,33 +164,58 @@ export class UploadAgent extends BaseAgent {
    * Generate a silent MP4 in YouTube Shorts format (vertical 1080x1920, max 60s).
    * Used when ElevenLabs is not configured — still publishes metadata to YouTube.
    */
-  async _generateSilentMp4(durationSeconds = 30) {
+  async _generateSilentMp4(durationSeconds = 30, brollBuffer = null) {
     const capped = Math.min(durationSeconds, 59); // Shorts must be ≤60s
     const id = randomUUID();
+    const brollPath = brollBuffer ? join(tmpdir(), `hec_broll_${id}.mp4`) : null;
     const outputPath = join(tmpdir(), `hec_silent_${id}.mp4`);
 
     try {
-      await execFileAsync('ffmpeg', [
-        '-y',
-        '-f', 'lavfi', '-i', `color=c=0x0f0f23:s=1080x1920:r=30:d=${capped}`,
-        '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
-        '-c:v', 'libx264', '-preset', 'fast',
-        '-profile:v', 'high', '-level', '4.2',
-        '-b:v', '2M', '-maxrate', '3M', '-bufsize', '6M',
-        '-g', '60', '-keyint_min', '30', '-bf', '2',
-        '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
-        '-t', String(capped),
-        '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
-        outputPath,
-      ], { timeout: 60000 });
+      if (brollBuffer && brollPath) await writeFile(brollPath, brollBuffer);
+
+      let args;
+      if (brollPath) {
+        this.log.info('Using Pexels B-roll for silent video');
+        args = [
+          '-y',
+          '-stream_loop', '-1', '-i', brollPath,
+          '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+          '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1',
+          '-c:v', 'libx264', '-preset', 'fast',
+          '-profile:v', 'high', '-level', '4.2',
+          '-b:v', '4M', '-maxrate', '5M', '-bufsize', '10M',
+          '-g', '60', '-keyint_min', '30', '-bf', '2',
+          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+          '-t', String(capped),
+          '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+          outputPath,
+        ];
+      } else {
+        args = [
+          '-y',
+          '-f', 'lavfi', '-i', `color=c=0x0f0f23:s=1080x1920:r=30:d=${capped}`,
+          '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+          '-c:v', 'libx264', '-preset', 'fast',
+          '-profile:v', 'high', '-level', '4.2',
+          '-b:v', '2M', '-maxrate', '3M', '-bufsize', '6M',
+          '-g', '60', '-keyint_min', '30', '-bf', '2',
+          '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+          '-t', String(capped),
+          '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+          outputPath,
+        ];
+      }
+
+      await execFileAsync('ffmpeg', args, { timeout: 60000 });
 
       const videoBuffer = await readFile(outputPath);
-      this.log.info({ outputSize: videoBuffer.byteLength, durationSeconds }, 'Silent MP4 generated');
+      this.log.info({ outputSize: videoBuffer.byteLength, durationSeconds, hasBroll: !!brollPath }, 'Silent MP4 generated');
       return videoBuffer;
     } catch (err) {
       this.log.error({ error: err.message }, 'ffmpeg silent MP4 generation failed');
       return null;
     } finally {
+      if (brollPath) await unlink(brollPath).catch(() => {});
       await unlink(outputPath).catch(() => {});
     }
   }
