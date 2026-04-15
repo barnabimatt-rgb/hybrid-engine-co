@@ -20,7 +20,8 @@ export class VoiceoverAgent extends BaseAgent {
 
     // If ElevenLabs API key is configured, generate real audio
     if (config.elevenLabs.apiKey) {
-      const audio = await this._generateElevenLabsAudio(context.script);
+      const cleanScript = this._sanitizeForSpeech(context.script);
+      const audio = await this._generateElevenLabsAudio(cleanScript);
       if (audio) {
         await limitManager.recordUsage('elevenlabs', charCount);
         return {
@@ -53,6 +54,21 @@ export class VoiceoverAgent extends BaseAgent {
       },
       voiceoverGenerated: false,
     };
+  }
+
+  /**
+   * Strip special characters that TTS reads aloud (hashtags, markdown, pipes, etc.)
+   */
+  _sanitizeForSpeech(text) {
+    return text
+      .replace(/#{1,6}\s*/g, '')          // Markdown headings
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1') // Bold/italic markers
+      .replace(/[#@|~`<>{}[\]]/g, '')     // Special characters
+      .replace(/\bhttps?:\/\/\S+/g, '')   // URLs
+      .replace(/\n{2,}/g, '. ')           // Double newlines → pause
+      .replace(/\n/g, ' ')               // Single newlines → space
+      .replace(/\s{2,}/g, ' ')            // Collapse whitespace
+      .trim();
   }
 
   async _generateElevenLabsAudio(text, retries = 2) {
