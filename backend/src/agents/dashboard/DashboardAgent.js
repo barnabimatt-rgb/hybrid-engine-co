@@ -9,13 +9,18 @@ export class DashboardAgent extends BaseAgent {
   constructor() { super('DashboardAgent', { category: 'dashboard' }); }
   async execute(context) {
     this.log.info('Aggregating dashboard data');
+
+    // Each query is wrapped so a single DB failure (missing table, timeout)
+    // never crashes the pipeline — the dashboard is non-critical.
+    const safe = (fn, fallback) => fn().catch((err) => { this.log.warn({ error: err.message }, 'Dashboard query failed'); return fallback; });
+
     const [totalRevenue, revenueBySource, revenueByNiche, assetCounts, recentRuns, errorRate, limits] = await Promise.all([
-      Revenue.getTotalRevenue(),
-      Revenue.getRevenueBySource(),
-      Revenue.getRevenueByNiche(),
-      Asset.countByType(),
-      PipelineRun.getRecent(10),
-      AgentEvent.getErrorRate(60),
+      safe(() => Revenue.getTotalRevenue(), 0),
+      safe(() => Revenue.getRevenueBySource(), {}),
+      safe(() => Revenue.getRevenueByNiche(), {}),
+      safe(() => Asset.countByType(), {}),
+      safe(() => PipelineRun.getRecent(10), []),
+      safe(() => AgentEvent.getErrorRate(60), 0),
       Promise.resolve(limitManager.getSnapshot()),
     ]);
     return {

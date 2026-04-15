@@ -203,12 +203,15 @@ export class UploadAgent extends BaseAgent {
     if (!accessToken) return null;
 
     try {
-      const description = context.script?.slice(0, 500)
+      // YouTube rejects descriptions with < > characters and other HTML-like content.
+      // Sanitize the script and cap at 4500 chars (YouTube max is 5000, leave room for tags).
+      const rawDesc = context.script?.slice(0, 4500)
         || context.product?.description
         || context.product?.tagline
         || context.angle
         || context.topic
         || '';
+      const description = rawDesc.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
 
       // Truncate title to 100 chars (YouTube limit)
       const title = (context.title || 'Hybrid Engine Co. Content').slice(0, 100);
