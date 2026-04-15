@@ -105,13 +105,20 @@ export class UploadAgent extends BaseAgent {
     try {
       await writeFile(audioPath, audioBuffer);
 
+      // YouTube-compliant encoding: High profile, keyframes every 2s, sufficient bitrate.
+      // Solid color + stillimage tune + high CRF produces near-zero bitrate streams
+      // that YouTube's transcoder rejects as "Processing abandoned."
       await execFileAsync('ffmpeg', [
         '-y',
         '-f', 'lavfi', '-i', 'color=c=0x0f0f23:s=1080x1920:r=30',
         '-i', audioPath,
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage', '-crf', '28',
-        '-c:a', 'aac', '-b:a', '128k',
-        '-shortest', '-t', '59', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+        '-c:v', 'libx264', '-preset', 'fast',
+        '-profile:v', 'high', '-level', '4.2',
+        '-b:v', '2M', '-maxrate', '3M', '-bufsize', '6M',
+        '-g', '60', '-keyint_min', '30', '-bf', '2',
+        '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+        '-shortest', '-t', '59',
+        '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
         outputPath,
       ], { timeout: 120000 });
 
@@ -141,9 +148,13 @@ export class UploadAgent extends BaseAgent {
         '-y',
         '-f', 'lavfi', '-i', `color=c=0x0f0f23:s=1080x1920:r=30:d=${capped}`,
         '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage', '-crf', '28',
-        '-c:a', 'aac', '-b:a', '128k',
-        '-t', String(capped), '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+        '-c:v', 'libx264', '-preset', 'fast',
+        '-profile:v', 'high', '-level', '4.2',
+        '-b:v', '2M', '-maxrate', '3M', '-bufsize', '6M',
+        '-g', '60', '-keyint_min', '30', '-bf', '2',
+        '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+        '-t', String(capped),
+        '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
         outputPath,
       ], { timeout: 60000 });
 
